@@ -25,6 +25,14 @@ import (
 	"ledger_pro/internal/service"
 )
 
+// @title LedgerPro API
+// @version 1.0
+// @description A FAANG-grade double-entry ledger system.
+// @host ledger-pro-api.onrender.com
+// @BasePath /
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
 func main() {
 	// -----------------------------------------------------------------------
 	// Logger

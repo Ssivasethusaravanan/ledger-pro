@@ -8,7 +8,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/redis/go-redis/v9"
+	httpSwagger "github.com/swaggo/http-swagger"
 
+	_ "ledger_pro/docs" // initialize swagger docs
 	"ledger_pro/internal/service"
 )
 
@@ -108,6 +110,11 @@ func NewRouter(
 
 	// Health & observability (public — no auth required)
 	r.Get("/v1/health", h.HealthCheck)
+
+	// Swagger UI (public)
+	r.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"), // URL pointing to API definition
+	))
 
 	// Auth routes
 	r.Route("/v1/auth", func(r chi.Router) {

@@ -19,6 +19,16 @@ type MeResponse struct {
 }
 
 // LoginHandler verifies the provided API key and sets a secure HttpOnly cookie.
+// @Summary Login
+// @Description Authenticates a user and sets a secure session cookie
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body LoginRequest true "Login credentials"
+// @Success 200 {object} LoginResponse
+// @Failure 400 {object} ProblemDetail
+// @Failure 401 {object} ProblemDetail
+// @Router /v1/auth/login [post]
 func (h *Handler) LoginHandler(keys map[string]APIKeyEntry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
@@ -59,6 +69,11 @@ func (h *Handler) LoginHandler(keys map[string]APIKeyEntry) http.HandlerFunc {
 }
 
 // LogoutHandler clears the session cookie and removes it from Redis.
+// @Summary Logout
+// @Description Revokes the active session and clears the session cookie
+// @Tags Authentication
+// @Success 204 "No Content"
+// @Router /v1/auth/logout [post]
 func (h *Handler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_token")
 	if err == nil && cookie.Value != "" {
@@ -82,6 +97,14 @@ func (h *Handler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // MeHandler returns the currently authenticated user's role.
+// @Summary Get Current User
+// @Description Returns the role of the currently authenticated session
+// @Tags Authentication
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} MeResponse
+// @Failure 401 {object} ProblemDetail
+// @Router /v1/auth/me [get]
 func (h *Handler) MeHandler(w http.ResponseWriter, r *http.Request) {
 	role := GetAPIKeyRole(r.Context())
 	if role == "" {

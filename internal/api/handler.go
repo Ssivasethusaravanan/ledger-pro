@@ -74,10 +74,33 @@ type HealthResponse struct {
 	Dependencies map[string]DependencyHealth `json:"dependencies"`
 }
 
+// Swagger DTOs (used only for API documentation generation)
+type swaggAccount struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Currency    string `json:"currency"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type swaggTransaction struct {
+	ID             string `json:"id"`
+	IdempotencyKey string `json:"idempotency_key"`
+	Description    string `json:"description"`
+	CreatedAt      string `json:"created_at"`
+}
+
 var startTime = time.Now()
 
-// HealthCheck performs deep diagnostic checks on all dependencies.
-// Returns 200 if all dependencies are healthy, 503 if any critical one is down.
+// HealthCheck provides a deep health check of all dependencies.
+// @Summary Health Check
+// @Description Checks connectivity to Postgres, Redis, RabbitMQ, and R2.
+// @Tags Observability
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Failure 503 {object} ProblemDetail
+// @Router /v1/health [get]
 func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	deps := make(map[string]DependencyHealth)
@@ -146,7 +169,18 @@ func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 // Account Handlers
 // ---------------------------------------------------------------------------
 
-// CreateAccount handles POST /v1/accounts
+// CreateAccount handles the creation of a new ledger account.
+// @Summary Create Account
+// @Description Creates a new double-entry ledger account
+// @Tags Accounts
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body service.CreateAccountRequest true "Account details"
+// @Success 201 {object} swaggAccount
+// @Failure 400 {object} ProblemDetail
+// @Failure 401 {object} ProblemDetail
+// @Router /v1/accounts [post]
 func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	var req service.CreateAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -175,7 +209,17 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, account)
 }
 
-// GetAccount handles GET /v1/accounts/{id}
+// GetAccount retrieves a single account by ID.
+// @Summary Get Account
+// @Description Retrieves an account by its ID
+// @Tags Accounts
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Account ID"
+// @Success 200 {object} swaggAccount
+// @Failure 401 {object} ProblemDetail
+// @Failure 404 {object} ProblemDetail
+// @Router /v1/accounts/{id} [get]
 func (h *Handler) GetAccount(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -197,7 +241,17 @@ func (h *Handler) GetAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, account)
 }
 
-// ListAccounts handles GET /v1/accounts
+// ListAccounts returns a paginated list of all accounts.
+// @Summary List Accounts
+// @Description Retrieves a paginated list of accounts
+// @Tags Accounts
+// @Produce json
+// @Security ApiKeyAuth
+// @Param cursor query string false "Pagination cursor"
+// @Param limit query int false "Number of items to return" default(50)
+// @Success 200 {array} swaggAccount
+// @Failure 401 {object} ProblemDetail
+// @Router /v1/accounts [get]
 func (h *Handler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	cursor, _ := strconv.ParseInt(r.URL.Query().Get("cursor"), 10, 64)
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
@@ -228,7 +282,17 @@ func (h *Handler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetAccountBalance handles GET /v1/accounts/{id}/balance
+// GetAccountBalance computes the current balance of an account from its postings.
+// @Summary Get Account Balance
+// @Description Computes the real-time balance of an account
+// @Tags Accounts
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Account ID"
+// @Success 200 {object} service.BalanceResponse
+// @Failure 401 {object} ProblemDetail
+// @Failure 404 {object} ProblemDetail
+// @Router /v1/accounts/{id}/balance [get]
 func (h *Handler) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -254,8 +318,20 @@ func (h *Handler) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 // Transaction Handlers
 // ---------------------------------------------------------------------------
 
-// CreateTransaction handles POST /v1/transactions
-// Requires an Idempotency-Key header.
+// CreateTransaction processes a new double-entry transaction atomically.
+// @Summary Create Transaction
+// @Description Processes a double-entry transaction
+// @Tags Transactions
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param Idempotency-Key header string true "Idempotency Key (UUID)"
+// @Param request body service.CreateTransactionRequest true "Transaction details"
+// @Success 201 {object} swaggTransaction
+// @Failure 400 {object} ProblemDetail
+// @Failure 401 {object} ProblemDetail
+// @Failure 409 {object} ProblemDetail
+// @Router /v1/transactions [post]
 func (h *Handler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	// Extract idempotency key from header
 	idempotencyKey := r.Header.Get("Idempotency-Key")
@@ -307,7 +383,17 @@ func (h *Handler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, txnResponse)
 }
 
-// GetTransaction handles GET /v1/transactions/{id}
+// GetTransaction retrieves a single transaction by ID.
+// @Summary Get Transaction
+// @Description Retrieves a transaction by its ID
+// @Tags Transactions
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Transaction ID"
+// @Success 200 {object} swaggTransaction
+// @Failure 401 {object} ProblemDetail
+// @Failure 404 {object} ProblemDetail
+// @Router /v1/transactions/{id} [get]
 func (h *Handler) GetTransaction(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -329,7 +415,17 @@ func (h *Handler) GetTransaction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, txnResponse)
 }
 
-// ListTransactions handles GET /v1/transactions
+// ListTransactions returns a paginated list of transactions.
+// @Summary List Transactions
+// @Description Retrieves a paginated list of transactions
+// @Tags Transactions
+// @Produce json
+// @Security ApiKeyAuth
+// @Param cursor query string false "Pagination cursor"
+// @Param limit query int false "Number of items to return" default(50)
+// @Success 200 {array} swaggTransaction
+// @Failure 401 {object} ProblemDetail
+// @Router /v1/transactions [get]
 func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 	cursorStr := r.URL.Query().Get("cursor")
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
