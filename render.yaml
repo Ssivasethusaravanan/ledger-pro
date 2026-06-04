@@ -1,0 +1,54 @@
+services:
+  # ==========================================================================
+  # LedgerPro Web Service
+  # ==========================================================================
+  - type: web
+    name: ledger-pro-api
+    env: docker
+    region: oregon # Same region as Render Redis if applicable
+    plan: free     # Upgrade to 'starter' or higher for production
+    healthCheckPath: /v1/health
+    
+    # Render automatically detects the Dockerfile in the root repository.
+    # It will build and deploy the `scratch` image.
+    
+    envVars:
+      # We define these without values so they must be securely injected via the Render Dashboard.
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false
+      
+      # R2 Variables
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+
+      # Optional configuration with sensible defaults
+      - key: SERVER_PORT
+        value: 8080
+      - key: SERVER_READ_TIMEOUT
+        value: 10s
+      - key: SERVER_WRITE_TIMEOUT
+        value: 30s
+      - key: IDEMPOTENCY_TTL
+        value: 24h
+      - key: LOG_LEVEL
+        value: info
+      
+      # RBAC and Rate Limit Config
+      - key: API_KEYS
+        sync: false # e.g. "sk-admin-xyz:admin"
+      - key: RATE_LIMIT_REQUESTS
+        value: "100"
+      - key: RATE_LIMIT_WINDOW
+        value: "1m"

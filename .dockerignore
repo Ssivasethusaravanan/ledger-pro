@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Go
+bin/
+vendor/
+
+# Environment files
+.env
+.env.*
+*.local
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Render
+render.yaml
+
+# Tests
+*.test
+*.out

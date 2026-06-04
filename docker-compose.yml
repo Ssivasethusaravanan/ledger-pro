@@ -1,0 +1,44 @@
+# ============================================================================
+# LedgerPro — Local Development Infrastructure
+# 
+# PostgreSQL is hosted on Supabase (not containerized).
+# Redis and RabbitMQ run locally for development.
+# ============================================================================
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ledger_pro_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ledger_pro_rabbitmq
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ledger
+      RABBITMQ_DEFAULT_PASS: ledger_secret
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  rabbitmq_data:
