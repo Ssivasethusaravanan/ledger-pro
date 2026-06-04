@@ -147,8 +147,8 @@ func APIKeyAuthMiddleware(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip auth for public paths (health, metrics, login)
-			if publicPaths != nil && publicPaths[r.URL.Path] {
+			// Skip auth for public paths (health, metrics, login) and Swagger UI
+			if (publicPaths != nil && publicPaths[r.URL.Path]) || strings.HasPrefix(r.URL.Path, "/swagger/") {
 				next.ServeHTTP(w, r)
 				return
 			}
