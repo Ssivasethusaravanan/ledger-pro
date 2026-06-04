@@ -24,15 +24,17 @@ import (
 // Handler holds the HTTP handler methods and their service dependency.
 type Handler struct {
 	svc    *service.LedgerService
+	auth   *service.AuthService
 	pool   *pgxpool.Pool
 	rdb    *redis.Client
 	logger *slog.Logger
 }
 
-// NewHandler constructs a new Handler with the given service and logger.
-func NewHandler(svc *service.LedgerService, logger *slog.Logger) *Handler {
+// NewHandler constructs a new Handler with the given services and logger.
+func NewHandler(svc *service.LedgerService, auth *service.AuthService, logger *slog.Logger) *Handler {
 	return &Handler{
 		svc:    svc,
+		auth:   auth,
 		pool:   svc.Pool(),
 		rdb:    svc.RedisClient(),
 		logger: logger,

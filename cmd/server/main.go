@@ -165,6 +165,11 @@ func main() {
 	ledgerService := service.NewLedgerService(pool, rdb, logger, storageService, idempotencyTTL)
 
 	// -----------------------------------------------------------------------
+	// Authentication Service (Session Storage)
+	// -----------------------------------------------------------------------
+	authService := service.NewAuthService(rdb, 24*time.Hour)
+
+	// -----------------------------------------------------------------------
 	// Outbox Worker (Background Event Publisher)
 	// -----------------------------------------------------------------------
 	outboxCfg := service.DefaultOutboxWorkerConfig()
@@ -199,7 +204,7 @@ func main() {
 		RequestTimeout:  cfg.WriteTimeout,
 	}
 
-	router := api.NewRouter(ledgerService, rdb, logger, routerCfg)
+	router := api.NewRouter(ledgerService, authService, rdb, logger, routerCfg)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.ServerPort),

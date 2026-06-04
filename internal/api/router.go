@@ -44,6 +44,7 @@ func DefaultRouterConfig() RouterConfig {
 // stack and all route registrations.
 func NewRouter(
 	svc *service.LedgerService,
+	authSvc *service.AuthService,
 	rdb *redis.Client,
 	logger *slog.Logger,
 	cfg RouterConfig,
@@ -88,17 +89,18 @@ func NewRouter(
 
 	// 9. API Key Authentication (skipped if no keys configured)
 	publicPaths := map[string]bool{
-		"/v1/health":  true,
-		"/v1/metrics": true,
+		"/v1/health":     true,
+		"/v1/metrics":    true,
+		"/v1/auth/login": true,
 	}
 	if len(cfg.APIKeys) > 0 {
-		r.Use(APIKeyAuthMiddleware(cfg.APIKeys, publicPaths, logger))
+		r.Use(APIKeyAuthMiddleware(cfg.APIKeys, publicPaths, logger, authSvc))
 	}
 
 	// ---------------------------------------------------------------------------
 	// Handler
 	// ---------------------------------------------------------------------------
-	h := NewHandler(svc, logger)
+	h := NewHandler(svc, authSvc, logger)
 
 	// ---------------------------------------------------------------------------
 	// Routes
@@ -106,6 +108,13 @@ func NewRouter(
 
 	// Health & observability (public — no auth required)
 	r.Get("/v1/health", h.HealthCheck)
+
+	// Auth routes
+	r.Route("/v1/auth", func(r chi.Router) {
+		r.Post("/login", h.LoginHandler(cfg.APIKeys))
+		r.Post("/logout", h.LogoutHandler)
+		r.Get("/me", h.MeHandler)
+	})
 
 	// Account routes
 	r.Route("/v1/accounts", func(r chi.Router) {

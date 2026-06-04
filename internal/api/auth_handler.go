@@ -1,0 +1,92 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+)
+
+type LoginRequest struct {
+	APIKey string `json:"api_key"`
+}
+
+type LoginResponse struct {
+	Role string `json:"role"`
+}
+
+type MeResponse struct {
+	Role string `json:"role"`
+}
+
+// LoginHandler verifies the provided API key and sets a secure HttpOnly cookie.
+func (h *Handler) LoginHandler(keys map[string]APIKeyEntry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req LoginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			WriteProblem(w, r, BadRequest("invalid JSON body"))
+			return
+		}
+
+		// 1. Verify API Key
+		entry, found := keys[req.APIKey]
+		if !found || req.APIKey == "" {
+			WriteProblem(w, r, Unauthorized("invalid API key"))
+			return
+		}
+
+		// 2. Generate Session Token in Redis
+		token, err := h.auth.CreateSession(r.Context(), entry.Role)
+		if err != nil {
+			h.logger.ErrorContext(r.Context(), "failed to create session", "error", err.Error())
+			WriteProblem(w, r, InternalError("failed to create session"))
+			return
+		}
+
+		// 3. Set HttpOnly Cookie
+		cookie := &http.Cookie{
+			Name:     "session_token",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true, // must be served over HTTPS (Render enforces this)
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   86400, // 24 hours
+		}
+		http.SetCookie(w, cookie)
+
+		writeJSON(w, http.StatusOK, LoginResponse{Role: entry.Role})
+	}
+}
+
+// LogoutHandler clears the session cookie and removes it from Redis.
+func (h *Handler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session_token")
+	if err == nil && cookie.Value != "" {
+		_ = h.auth.RevokeSession(r.Context(), cookie.Value)
+	}
+
+	// Clear cookie
+	clearCookie := &http.Cookie{
+		Name:     "session_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	}
+	http.SetCookie(w, clearCookie)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MeHandler returns the currently authenticated user's role.
+func (h *Handler) MeHandler(w http.ResponseWriter, r *http.Request) {
+	role := GetAPIKeyRole(r.Context())
+	if role == "" {
+		WriteProblem(w, r, Unauthorized("not authenticated"))
+		return
+	}
+	writeJSON(w, http.StatusOK, MeResponse{Role: role})
+}

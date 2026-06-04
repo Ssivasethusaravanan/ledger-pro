@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"ledger_pro/internal/service"
 )
 
 // ---------------------------------------------------------------------------
@@ -136,18 +137,36 @@ type APIKeyEntry struct {
 	Role string // "admin", "write", "read"
 }
 
-// APIKeyAuthMiddleware validates API keys and injects the role into the context.
+// APIKeyAuthMiddleware validates API keys or session cookies and injects the role into the context.
 // Pass nil for publicPaths to require auth on all routes.
-func APIKeyAuthMiddleware(keys map[string]APIKeyEntry, publicPaths map[string]bool, logger *slog.Logger) func(http.Handler) http.Handler {
+func APIKeyAuthMiddleware(
+	keys map[string]APIKeyEntry,
+	publicPaths map[string]bool,
+	logger *slog.Logger,
+	authSvc *service.AuthService,
+) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip auth for public paths (health, metrics)
+			// Skip auth for public paths (health, metrics, login)
 			if publicPaths != nil && publicPaths[r.URL.Path] {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Extract API key from X-API-Key or Authorization: Bearer
+			// 1. Try to extract from Session Cookie first (Browser UI)
+			cookie, err := r.Cookie("session_token")
+			if err == nil && cookie.Value != "" && authSvc != nil {
+				role, err := authSvc.ValidateSession(r.Context(), cookie.Value)
+				if err == nil && role != "" {
+					// Valid session
+					ctx := context.WithValue(r.Context(), APIKeyRoleKey, role)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				// If session is invalid, fall through to try API key headers
+			}
+
+			// 2. Extract API key from X-API-Key or Authorization: Bearer (Server-to-Server)
 			apiKey := r.Header.Get("X-API-Key")
 			if apiKey == "" {
 				authHeader := r.Header.Get("Authorization")
@@ -157,11 +176,11 @@ func APIKeyAuthMiddleware(keys map[string]APIKeyEntry, publicPaths map[string]bo
 			}
 
 			if apiKey == "" {
-				logger.WarnContext(r.Context(), "request missing API key",
+				logger.WarnContext(r.Context(), "request missing API key or session cookie",
 					slog.String("path", r.URL.Path),
 					slog.String("remote_addr", r.RemoteAddr),
 				)
-				WriteProblem(w, r, Unauthorized("API key is required — provide via X-API-Key header or Authorization: Bearer"))
+				WriteProblem(w, r, Unauthorized("authentication required (API key or session cookie)"))
 				return
 			}
 
