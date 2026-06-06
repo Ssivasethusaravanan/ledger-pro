@@ -250,6 +250,24 @@ func (s *LedgerService) GetAccountBalance(ctx context.Context, accountID int64) 
 	}, nil
 }
 
+// ListAccountPostings retrieves a paginated list of postings for a specific account.
+func (s *LedgerService) ListAccountPostings(ctx context.Context, accountID int64, offset int32, pageSize int32) ([]db.GetPostingsByAccountIDRow, error) {
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	postings, err := s.queries.GetPostingsByAccountID(ctx, db.GetPostingsByAccountIDParams{
+		AccountID:  accountID,
+		PageSize:   pageSize,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list account postings: %w", err)
+	}
+
+	return postings, nil
+}
+
 // ---------------------------------------------------------------------------
 // Transaction Operations (Core Double-Entry Logic)
 // ---------------------------------------------------------------------------

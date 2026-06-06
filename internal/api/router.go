@@ -143,6 +143,7 @@ func NewRouter(
 			r.Get("/", h.ListAccounts)
 			r.Get("/{id}", h.GetAccount)
 			r.Get("/{id}/balance", h.GetAccountBalance)
+			r.Get("/{id}/postings", h.GetAccountPostings)
 		})
 	})
 

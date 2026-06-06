@@ -395,6 +395,70 @@ func (q *Queries) GetPendingOutboxEvents(ctx context.Context, batchSize int32) (
 	return items, nil
 }
 
+const getPostingsByAccountID = `-- name: GetPostingsByAccountID :many
+SELECT
+    p.id,
+    p.transaction_id,
+    t.description AS transaction_description,
+    p.account_id,
+    a.account_name,
+    p.amount,
+    p.direction,
+    p.created_at
+FROM postings p
+JOIN accounts a ON a.id = p.account_id
+JOIN transactions t ON t.id = p.transaction_id
+WHERE p.account_id = $1
+ORDER BY p.created_at DESC
+LIMIT $3::INT OFFSET $2::INT
+`
+
+type GetPostingsByAccountIDParams struct {
+	AccountID  int64 `json:"account_id"`
+	PageOffset int32 `json:"page_offset"`
+	PageSize   int32 `json:"page_size"`
+}
+
+type GetPostingsByAccountIDRow struct {
+	ID                     int64              `json:"id"`
+	TransactionID          uuid.UUID          `json:"transaction_id"`
+	TransactionDescription string             `json:"transaction_description"`
+	AccountID              int64              `json:"account_id"`
+	AccountName            string             `json:"account_name"`
+	Amount                 int64              `json:"amount"`
+	Direction              PostingDirection   `json:"direction"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetPostingsByAccountID(ctx context.Context, arg GetPostingsByAccountIDParams) ([]GetPostingsByAccountIDRow, error) {
+	rows, err := q.db.Query(ctx, getPostingsByAccountID, arg.AccountID, arg.PageOffset, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPostingsByAccountIDRow{}
+	for rows.Next() {
+		var i GetPostingsByAccountIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TransactionID,
+			&i.TransactionDescription,
+			&i.AccountID,
+			&i.AccountName,
+			&i.Amount,
+			&i.Direction,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPostingsByTransactionID = `-- name: GetPostingsByTransactionID :many
 SELECT
     p.id,

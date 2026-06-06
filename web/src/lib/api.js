@@ -106,6 +106,10 @@ export const getAccountBalance = (id) => {
   return apiFetch(`/accounts/${id}/balance`, { method: 'GET' });
 };
 
+export const getAccountPostings = (id, offset = 0, limit = 50) => {
+  return apiFetch(`/accounts/${id}/postings?offset=${offset}&page_size=${limit}`, { method: 'GET' });
+};
+
 export const createAccount = (data) => {
   return apiFetch('/accounts', {
     method: 'POST',

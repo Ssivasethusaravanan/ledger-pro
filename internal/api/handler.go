@@ -314,6 +314,49 @@ func (h *Handler) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, balance)
 }
 
+// GetAccountPostings retrieves a paginated list of postings for an account.
+// @Summary Get Account Postings
+// @Description Retrieves postings for an account
+// @Tags Accounts
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Account ID"
+// @Param offset query int false "Pagination offset" default(0)
+// @Param limit query int false "Number of items to return" default(50)
+// @Success 200 {array} db.GetPostingsByAccountIDRow
+// @Failure 401 {object} ProblemDetail
+// @Router /v1/accounts/{id}/postings [get]
+func (h *Handler) GetAccountPostings(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		WriteProblem(w, r, BadRequest("invalid account id — must be an integer"))
+		return
+	}
+
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		WriteProblem(w, r, BadRequest("page_size must not exceed 100"))
+		return
+	}
+
+	postings, err := h.svc.ListAccountPostings(r.Context(), id, int32(offset), int32(pageSize))
+	if err != nil {
+		WriteProblem(w, r, InternalError("failed to list account postings"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data":      postings,
+		"offset":    offset + len(postings),
+		"page_size": pageSize,
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Transaction Handlers
 // ---------------------------------------------------------------------------

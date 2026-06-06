@@ -84,6 +84,23 @@ JOIN accounts a ON a.id = p.account_id
 WHERE p.transaction_id = $1
 ORDER BY p.id ASC;
 
+-- name: GetPostingsByAccountID :many
+SELECT
+    p.id,
+    p.transaction_id,
+    t.description AS transaction_description,
+    p.account_id,
+    a.account_name,
+    p.amount,
+    p.direction,
+    p.created_at
+FROM postings p
+JOIN accounts a ON a.id = p.account_id
+JOIN transactions t ON t.id = p.transaction_id
+WHERE p.account_id = $1
+ORDER BY p.created_at DESC
+LIMIT @page_size::INT OFFSET @page_offset::INT;
+
 -- ---------------------------------------------------------------------------
 -- BALANCE COMPUTATION
 -- ---------------------------------------------------------------------------

@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getAccount, getAccountBalance } from '@/lib/api';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { getAccount, getAccountBalance, getAccountPostings } from '@/lib/api';
+import { formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
+import Link from 'next/link';
 import GlassCard from '@/components/GlassCard';
 import Badge from '@/components/Badge';
 import Button from '@/components/Button';
@@ -15,6 +16,7 @@ export default function AccountDetailPage() {
   
   const [account, setAccount] = useState(null);
   const [balance, setBalance] = useState(null);
+  const [postings, setPostings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -22,12 +24,14 @@ export default function AccountDetailPage() {
     async function fetchData() {
       try {
         setLoading(true);
-        const [accRes, balRes] = await Promise.all([
+        const [accRes, balRes, postRes] = await Promise.all([
           getAccount(id),
-          getAccountBalance(id)
+          getAccountBalance(id),
+          getAccountPostings(id)
         ]);
         setAccount(accRes);
         setBalance(balRes);
+        setPostings(postRes?.data || []);
       } catch (err) {
         setError('Failed to load account details');
         console.error(err);
@@ -138,17 +142,62 @@ export default function AccountDetailPage() {
       <GlassCard noPadding className="overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-brand-border-glass flex justify-between items-center bg-brand-bg-secondary/30">
           <h2 className="text-lg font-medium text-white">Recent Postings</h2>
-          <Badge>Coming Soon</Badge>
+          <Badge variant="primary">{postings.length}</Badge>
         </div>
-        <div className="p-16 text-center">
-            <div className="mx-auto w-16 h-16 rounded-full bg-brand-bg-glass flex items-center justify-center mb-4">
-              <svg className="w-8 h-8 text-brand-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-medium text-white">Posting History</h3>
-            <p className="mt-1 text-brand-text-secondary max-w-sm mx-auto">The backend doesn't currently expose a GET /postings endpoint. This table will be hydrated once the API is updated.</p>
-        </div>
+        
+        {postings.length === 0 ? (
+          <div className="p-16 text-center">
+              <div className="mx-auto w-16 h-16 rounded-full bg-brand-bg-glass flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-brand-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-white">No Postings</h3>
+              <p className="mt-1 text-brand-text-secondary max-w-sm mx-auto">This account has no postings yet.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto hide-scrollbar">
+            <table className="min-w-full divide-y divide-brand-border-glass">
+              <thead className="bg-brand-bg-secondary/20">
+                <tr>
+                  <th scope="col" className="py-3 pl-4 pr-3 text-left text-xs font-medium text-brand-text-secondary uppercase tracking-wider">Transaction</th>
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-brand-text-secondary uppercase tracking-wider">Time</th>
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-brand-text-secondary uppercase tracking-wider">Direction</th>
+                  <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-brand-text-secondary uppercase tracking-wider">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-border-glass">
+                {postings.map((posting) => (
+                  <tr key={posting.id} className="hover:bg-brand-bg-glass/50 transition-colors group">
+                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm">
+                      <div className="flex flex-col">
+                        <Link href={`/transactions/${posting.transaction_id}`} className="font-mono text-brand-accent-primary hover:text-brand-accent-primary-hover transition-colors">
+                          {posting.transaction_id.substring(0, 8)}...
+                        </Link>
+                        <span className="text-brand-text-secondary text-xs mt-1 truncate max-w-[200px]" title={posting.transaction_description}>
+                          {posting.transaction_description || 'No description'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-brand-text-secondary">
+                      {formatRelativeTime(posting.created_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium uppercase ${
+                        posting.direction === 'debit' ? 'bg-brand-accent-info/20 text-brand-accent-info' : 'bg-brand-accent-warning/20 text-brand-accent-warning'
+                      }`}>
+                        {posting.direction}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-right text-white">
+                      {formatCurrency(posting.amount, account.currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </GlassCard>
     </div>
   );
