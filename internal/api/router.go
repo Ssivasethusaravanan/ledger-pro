@@ -91,9 +91,10 @@ func NewRouter(
 
 	// 9. API Key Authentication (skipped if no keys configured)
 	publicPaths := map[string]bool{
-		"/v1/health":     true,
-		"/v1/metrics":    true,
-		"/v1/auth/login": true,
+		"/v1/health":      true,
+		"/v1/metrics":     true,
+		"/v1/auth/login":  true,
+		"/v1/auth/signup": true,
 	}
 	if len(cfg.APIKeys) > 0 {
 		r.Use(APIKeyAuthMiddleware(cfg.APIKeys, publicPaths, logger, authSvc))
@@ -119,6 +120,7 @@ func NewRouter(
 	// Auth routes
 	r.Route("/v1/auth", func(r chi.Router) {
 		r.Post("/login", h.LoginHandler(cfg.APIKeys))
+		r.Post("/signup", h.SignupHandler)
 		r.Post("/logout", h.LogoutHandler)
 		r.Get("/me", h.MeHandler)
 	})

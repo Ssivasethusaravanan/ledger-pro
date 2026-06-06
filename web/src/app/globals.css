@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-bg-primary: #0a0e1a;
+  --color-brand-bg-secondary: #111827;
+  --color-brand-bg-glass: rgba(255, 255, 255, 0.04);
+  --color-brand-bg-glass-hover: rgba(255, 255, 255, 0.08);
+  --color-brand-border-glass: rgba(255, 255, 255, 0.08);
+  
+  --color-brand-text-primary: #f1f5f9;
+  --color-brand-text-secondary: #94a3b8;
+  --color-brand-text-muted: #64748b;
+  
+  --color-brand-accent-primary: #6366f1;
+  --color-brand-accent-primary-hover: #4f46e5;
+  --color-brand-accent-success: #10b981;
+  --color-brand-accent-warning: #f59e0b;
+  --color-brand-accent-danger: #ef4444;
+  --color-brand-accent-info: #3b82f6;
+
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+:root {
+  /* Enforce dark mode globally for the dashboard */
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-brand-bg-primary);
+  background-image: radial-gradient(circle at 50% -20%, #1e1b4b 0%, transparent 60%);
+  color: var(--color-brand-text-primary);
+  min-height: 100vh;
+  /* Inter is loaded via next/font in layout.js */
+}
+
+/* Glassmorphism utility classes */
+@layer utilities {
+  .glass-card {
+    @apply bg-brand-bg-glass backdrop-blur-xl border border-brand-border-glass rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-all duration-300;
+  }
+  
+  .glass-card:hover {
+    @apply bg-brand-bg-glass-hover border-[rgba(255,255,255,0.15)] shadow-[0_8px_32px_rgba(99,102,241,0.1)];
+  }
+
+  .glass-panel {
+    @apply bg-brand-bg-secondary border-r border-brand-border-glass shadow-[4px_0_24px_rgba(0,0,0,0.2)];
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-white to-brand-text-secondary;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Animations */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
