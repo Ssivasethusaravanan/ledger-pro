@@ -9,6 +9,7 @@ import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
 import Modal from '@/components/Modal';
+import Badge from '@/components/Badge';
 import { IconSearch } from '@/components/Icons';
 import { useAuth } from '@/lib/auth';
 
@@ -34,18 +35,20 @@ export default function TransactionsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = React.useCallback(async () => {
     try {
       setLoading(true);
       const res = await getTransactions('', 50);
       setTxns(res?.data || []);
     } catch (err) {
       setError('Failed to load transactions');
-      console.error(err);
+      if (!err.message?.includes('authentication required')) {
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchTransactions();
@@ -53,7 +56,7 @@ export default function TransactionsPage() {
     getAccounts(0, 100).then(res => {
       setAccounts(res?.data || []);
     }).catch(console.error);
-  }, []);
+  }, [fetchTransactions]);
 
   const openCreateModal = () => {
     setIdempotencyKey(generateUUID());

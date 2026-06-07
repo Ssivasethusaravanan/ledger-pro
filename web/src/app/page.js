@@ -24,7 +24,9 @@ export default function Dashboard() {
           txns: txnRes?.data || [] 
         });
       } catch (e) {
-        console.error(e);
+        if (!e.message?.includes('authentication required')) {
+          console.error(e);
+        }
       } finally {
         setLoading(false);
       }

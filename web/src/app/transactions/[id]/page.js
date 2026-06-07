@@ -24,7 +24,7 @@ export default function TransactionDetailPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
-  const fetchData = async () => {
+  const fetchData = React.useCallback(async () => {
     try {
       setLoading(true);
       const [txnRes, docRes] = await Promise.all([
@@ -35,17 +35,19 @@ export default function TransactionDetailPage() {
       setDocuments(docRes?.data || []);
     } catch (err) {
       setError('Failed to load transaction details');
-      console.error(err);
+      if (!err.message?.includes('authentication required')) {
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     if (id) {
       fetchData();
     }
-  }, [id]);
+  }, [id, fetchData]);
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];

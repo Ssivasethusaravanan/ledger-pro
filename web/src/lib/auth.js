@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { getMe, login as apiLogin, logout as apiLogout } from './api';
+import { getMe, login as apiLogin, logout as apiLogout, signup as apiSignup } from './api';
 
 const AuthContext = createContext({
   isAuthenticated: false,
@@ -63,7 +63,7 @@ export const AuthProvider = ({ children }) => {
   const signup = async (email, password) => {
     setIsLoading(true);
     try {
-      const data = await import('./api').then(m => m.signup(email, password));
+      const data = await apiSignup(email, password);
       setIsAuthenticated(true);
       setRole(data.role);
       router.push('/');

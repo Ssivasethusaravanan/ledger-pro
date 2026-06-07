@@ -4,6 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { getHealth } from '@/lib/api';
 import GlassCard from '@/components/GlassCard';
 
+const StatusDot = ({ status }) => {
+  if (status === 'up') {
+    return <div className="w-3 h-3 rounded-full bg-brand-accent-success shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse-slow"></div>;
+  }
+  return <div className="w-3 h-3 rounded-full bg-brand-accent-danger shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>;
+};
+
 export default function HealthPage() {
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,7 +25,9 @@ export default function HealthPage() {
       setLastUpdated(new Date());
     } catch (err) {
       setError('Failed to connect to health endpoint. System may be down.');
-      console.error(err);
+      if (!err.message?.includes('authentication required')) {
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }
@@ -30,13 +39,6 @@ export default function HealthPage() {
     const interval = setInterval(fetchHealth, 10000);
     return () => clearInterval(interval);
   }, []);
-
-  const StatusDot = ({ status }) => {
-    if (status === 'up') {
-      return <div className="w-3 h-3 rounded-full bg-brand-accent-success shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse-slow"></div>;
-    }
-    return <div className="w-3 h-3 rounded-full bg-brand-accent-danger shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>;
-  };
 
   if (loading && !health) {
     return (

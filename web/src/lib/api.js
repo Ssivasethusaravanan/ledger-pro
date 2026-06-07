@@ -54,7 +54,10 @@ async function apiFetch(endpoint, options = {}) {
     const response = await fetch(`/v1${endpoint}`, config);
     return await handleResponse(response);
   } catch (error) {
-    console.error(`API Fetch Error (${endpoint}):`, error);
+    // Suppress console.error for expected auth errors so Next.js doesn't show the error overlay
+    if (!error.message?.includes('authentication required')) {
+      console.error(`API Fetch Error (${endpoint}):`, error);
+    }
     throw error;
   }
 }
@@ -83,10 +86,14 @@ export const logout = () => {
   });
 };
 
-export const getMe = () => {
-  return apiFetch('/auth/me', {
-    method: 'GET',
-  });
+export const getMe = async () => {
+  try {
+    return await apiFetch('/auth/me', { method: 'GET' });
+  } catch (error) {
+    // Return null instead of throwing so we don't trigger the Next.js dev error overlay
+    // when the user is simply not logged in.
+    return null;
+  }
 };
 
 // ---------------------------------------------------------------------------

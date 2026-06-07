@@ -36,7 +36,9 @@ export default function AccountsPage() {
       setAccounts(res?.data || []);
     } catch (err) {
       setError('Failed to load accounts');
-      console.error(err);
+      if (!err.message?.includes('authentication required')) {
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }

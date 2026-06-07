@@ -34,7 +34,9 @@ export default function AccountDetailPage() {
         setPostings(postRes?.data || []);
       } catch (err) {
         setError('Failed to load account details');
-        console.error(err);
+        if (!err.message?.includes('authentication required')) {
+          console.error(err);
+        }
       } finally {
         setLoading(false);
       }
