@@ -19,7 +19,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 
+	"ledger_pro/db/migrations"
 	"ledger_pro/internal/api"
 	"ledger_pro/internal/db"
 	"ledger_pro/internal/service"
@@ -52,6 +56,11 @@ func main() {
 	// Configuration from Environment
 	// -----------------------------------------------------------------------
 	cfg := loadConfig()
+
+	// -----------------------------------------------------------------------
+	// Run Database Migrations
+	// -----------------------------------------------------------------------
+	runMigrations(cfg.DatabaseURL, logger)
 
 	// -----------------------------------------------------------------------
 	// PostgreSQL Connection Pool (Supabase)
@@ -267,6 +276,33 @@ func main() {
 
 	// Deferred closes will run for pool, rdb, amqpChan, amqpConn
 	logger.Info("LedgerPro shutdown complete")
+}
+
+// ---------------------------------------------------------------------------
+// Migrations
+// ---------------------------------------------------------------------------
+
+func runMigrations(dbURL string, logger *slog.Logger) {
+	d, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		logger.Error("failed to load embedded migrations", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	// We need to parse the dbURL since golang-migrate might expect a slightly different format,
+	// but generally standard postgres:// URLs work out of the box with the postgres driver.
+	m, err := migrate.NewWithSourceInstance("iofs", d, dbURL)
+	if err != nil {
+		logger.Error("failed to initialize database migrations", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	logger.Info("running database migrations...")
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		logger.Error("failed to apply migrations", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	logger.Info("database migrations applied successfully (or already up to date)")
 }
 
 // ---------------------------------------------------------------------------
