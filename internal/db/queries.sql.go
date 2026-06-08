@@ -15,10 +15,11 @@ import (
 
 const countAccounts = `-- name: CountAccounts :one
 SELECT COUNT(*) FROM accounts
+WHERE tenant_id = $1
 `
 
-func (q *Queries) CountAccounts(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countAccounts)
+func (q *Queries) CountAccounts(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAccounts, tenantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -26,10 +27,11 @@ func (q *Queries) CountAccounts(ctx context.Context) (int64, error) {
 
 const countTransactions = `-- name: CountTransactions :one
 SELECT COUNT(*) FROM transactions
+WHERE tenant_id = $1
 `
 
-func (q *Queries) CountTransactions(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countTransactions)
+func (q *Queries) CountTransactions(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countTransactions, tenantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -37,30 +39,25 @@ func (q *Queries) CountTransactions(ctx context.Context) (int64, error) {
 
 const createAccount = `-- name: CreateAccount :one
 
-
-INSERT INTO accounts (account_name, account_type, currency, metadata)
-VALUES ($1, $2, $3, $4)
-RETURNING id, account_name, account_type, currency, metadata, created_at
+INSERT INTO accounts (tenant_id, account_name, account_type, currency, metadata)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, account_name, account_type, currency, metadata, created_at, tenant_id
 `
 
 type CreateAccountParams struct {
+	TenantID    uuid.UUID   `json:"tenant_id"`
 	AccountName string      `json:"account_name"`
 	AccountType AccountType `json:"account_type"`
 	Currency    string      `json:"currency"`
 	Metadata    []byte      `json:"metadata"`
 }
 
-// ============================================================================
-// LedgerPro: SQLC Queries
-//
-// Naming convention: [Action][Entity] with SQLC annotations
-// All balance computations are real-time aggregations — no materialized column.
-// ============================================================================
 // ---------------------------------------------------------------------------
 // ACCOUNTS
 // ---------------------------------------------------------------------------
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
 	row := q.db.QueryRow(ctx, createAccount,
+		arg.TenantID,
 		arg.AccountName,
 		arg.AccountType,
 		arg.Currency,
@@ -74,18 +71,20 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Currency,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const createDocument = `-- name: CreateDocument :one
 
-INSERT INTO documents (transaction_id, filename, content_type, size_bytes, object_key)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, transaction_id, filename, content_type, size_bytes, object_key, created_at
+INSERT INTO documents (tenant_id, transaction_id, filename, content_type, size_bytes, object_key)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, transaction_id, filename, content_type, size_bytes, object_key, created_at, tenant_id
 `
 
 type CreateDocumentParams struct {
+	TenantID      uuid.UUID `json:"tenant_id"`
 	TransactionID uuid.UUID `json:"transaction_id"`
 	Filename      string    `json:"filename"`
 	ContentType   string    `json:"content_type"`
@@ -98,6 +97,7 @@ type CreateDocumentParams struct {
 // ---------------------------------------------------------------------------
 func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) (Document, error) {
 	row := q.db.QueryRow(ctx, createDocument,
+		arg.TenantID,
 		arg.TransactionID,
 		arg.Filename,
 		arg.ContentType,
@@ -113,18 +113,20 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 		&i.SizeBytes,
 		&i.ObjectKey,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const createOutboxEvent = `-- name: CreateOutboxEvent :one
 
-INSERT INTO ledger_outbox (event_type, routing_key, payload)
-VALUES ($1, $2, $3)
-RETURNING id, event_type, routing_key, payload, status, retry_count, max_retries, last_error, created_at, processed_at
+INSERT INTO ledger_outbox (tenant_id, event_type, routing_key, payload)
+VALUES ($1, $2, $3, $4)
+RETURNING id, event_type, routing_key, payload, status, retry_count, max_retries, last_error, created_at, processed_at, tenant_id
 `
 
 type CreateOutboxEventParams struct {
+	TenantID   uuid.UUID       `json:"tenant_id"`
 	EventType  string          `json:"event_type"`
 	RoutingKey string          `json:"routing_key"`
 	Payload    json.RawMessage `json:"payload"`
@@ -134,7 +136,12 @@ type CreateOutboxEventParams struct {
 // OUTBOX (Transactional Event Delivery)
 // ---------------------------------------------------------------------------
 func (q *Queries) CreateOutboxEvent(ctx context.Context, arg CreateOutboxEventParams) (LedgerOutbox, error) {
-	row := q.db.QueryRow(ctx, createOutboxEvent, arg.EventType, arg.RoutingKey, arg.Payload)
+	row := q.db.QueryRow(ctx, createOutboxEvent,
+		arg.TenantID,
+		arg.EventType,
+		arg.RoutingKey,
+		arg.Payload,
+	)
 	var i LedgerOutbox
 	err := row.Scan(
 		&i.ID,
@@ -147,18 +154,20 @@ func (q *Queries) CreateOutboxEvent(ctx context.Context, arg CreateOutboxEventPa
 		&i.LastError,
 		&i.CreatedAt,
 		&i.ProcessedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const createPosting = `-- name: CreatePosting :one
 
-INSERT INTO postings (transaction_id, account_id, amount, direction)
-VALUES ($1, $2, $3, $4)
-RETURNING id, transaction_id, account_id, amount, direction, created_at
+INSERT INTO postings (tenant_id, transaction_id, account_id, amount, direction)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, transaction_id, account_id, amount, direction, created_at, tenant_id
 `
 
 type CreatePostingParams struct {
+	TenantID      uuid.UUID        `json:"tenant_id"`
 	TransactionID uuid.UUID        `json:"transaction_id"`
 	AccountID     int64            `json:"account_id"`
 	Amount        int64            `json:"amount"`
@@ -170,6 +179,7 @@ type CreatePostingParams struct {
 // ---------------------------------------------------------------------------
 func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error) {
 	row := q.db.QueryRow(ctx, createPosting,
+		arg.TenantID,
 		arg.TransactionID,
 		arg.AccountID,
 		arg.Amount,
@@ -183,28 +193,56 @@ func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (P
 		&i.Amount,
 		&i.Direction,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
+	return i, err
+}
+
+const createTenant = `-- name: CreateTenant :one
+
+
+INSERT INTO tenants (name)
+VALUES ($1)
+RETURNING id, name, created_at
+`
+
+// ============================================================================
+// LedgerPro: SQLC Queries
+// ============================================================================
+// ---------------------------------------------------------------------------
+// TENANTS
+// ---------------------------------------------------------------------------
+func (q *Queries) CreateTenant(ctx context.Context, name string) (Tenant, error) {
+	row := q.db.QueryRow(ctx, createTenant, name)
+	var i Tenant
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err
 }
 
 const createTransaction = `-- name: CreateTransaction :one
 
-INSERT INTO transactions (idempotency_key, description, metadata)
-VALUES ($1, $2, $3)
-RETURNING id, idempotency_key, description, metadata, created_at
+INSERT INTO transactions (tenant_id, idempotency_key, description, metadata)
+VALUES ($1, $2, $3, $4)
+RETURNING id, idempotency_key, description, metadata, created_at, tenant_id
 `
 
 type CreateTransactionParams struct {
-	IdempotencyKey string `json:"idempotency_key"`
-	Description    string `json:"description"`
-	Metadata       []byte `json:"metadata"`
+	TenantID       uuid.UUID `json:"tenant_id"`
+	IdempotencyKey string    `json:"idempotency_key"`
+	Description    string    `json:"description"`
+	Metadata       []byte    `json:"metadata"`
 }
 
 // ---------------------------------------------------------------------------
 // TRANSACTIONS
 // ---------------------------------------------------------------------------
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
-	row := q.db.QueryRow(ctx, createTransaction, arg.IdempotencyKey, arg.Description, arg.Metadata)
+	row := q.db.QueryRow(ctx, createTransaction,
+		arg.TenantID,
+		arg.IdempotencyKey,
+		arg.Description,
+		arg.Metadata,
+	)
 	var i Transaction
 	err := row.Scan(
 		&i.ID,
@@ -212,28 +250,35 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 		&i.Description,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const createUser = `-- name: CreateUser :one
 
-INSERT INTO users (email, password_hash, role)
-VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, role, created_at, updated_at
+INSERT INTO users (tenant_id, email, password_hash, role)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, password_hash, role, created_at, updated_at, tenant_id
 `
 
 type CreateUserParams struct {
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
-	Role         string `json:"role"`
+	TenantID     uuid.UUID `json:"tenant_id"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash"`
+	Role         string    `json:"role"`
 }
 
 // ---------------------------------------------------------------------------
 // USERS
 // ---------------------------------------------------------------------------
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.Role)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.TenantID,
+		arg.Email,
+		arg.PasswordHash,
+		arg.Role,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -242,6 +287,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
@@ -256,8 +302,13 @@ SELECT
         COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount ELSE 0 END), 0)
     )::BIGINT AS net_balance
 FROM postings
-WHERE account_id = $1
+WHERE account_id = $1 AND tenant_id = $2
 `
+
+type GetAccountBalanceParams struct {
+	AccountID int64     `json:"account_id"`
+	TenantID  uuid.UUID `json:"tenant_id"`
+}
 
 type GetAccountBalanceRow struct {
 	TotalDebits  int64 `json:"total_debits"`
@@ -268,29 +319,26 @@ type GetAccountBalanceRow struct {
 // ---------------------------------------------------------------------------
 // BALANCE COMPUTATION
 // ---------------------------------------------------------------------------
-// Returns the net balance for an account as:
-//
-//	SUM(debits) - SUM(credits)
-//
-// For asset/expense accounts: positive balance = normal (debit-normal).
-// For liability/equity/revenue accounts: negative balance = normal (credit-normal).
-// The caller interprets sign based on account_type.
-// ---------------------------------------------------------------------------
-func (q *Queries) GetAccountBalance(ctx context.Context, accountID int64) (GetAccountBalanceRow, error) {
-	row := q.db.QueryRow(ctx, getAccountBalance, accountID)
+func (q *Queries) GetAccountBalance(ctx context.Context, arg GetAccountBalanceParams) (GetAccountBalanceRow, error) {
+	row := q.db.QueryRow(ctx, getAccountBalance, arg.AccountID, arg.TenantID)
 	var i GetAccountBalanceRow
 	err := row.Scan(&i.TotalDebits, &i.TotalCredits, &i.NetBalance)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, account_name, account_type, currency, metadata, created_at FROM accounts
-WHERE id = $1
+SELECT id, account_name, account_type, currency, metadata, created_at, tenant_id FROM accounts
+WHERE id = $1 AND tenant_id = $2
 LIMIT 1
 `
 
-func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error) {
-	row := q.db.QueryRow(ctx, getAccountByID, id)
+type GetAccountByIDParams struct {
+	ID       int64     `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetAccountByID(ctx context.Context, arg GetAccountByIDParams) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccountByID, arg.ID, arg.TenantID)
 	var i Account
 	err := row.Scan(
 		&i.ID,
@@ -299,18 +347,24 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 		&i.Currency,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getAccountByName = `-- name: GetAccountByName :one
-SELECT id, account_name, account_type, currency, metadata, created_at FROM accounts
-WHERE account_name = $1
+SELECT id, account_name, account_type, currency, metadata, created_at, tenant_id FROM accounts
+WHERE account_name = $1 AND tenant_id = $2
 LIMIT 1
 `
 
-func (q *Queries) GetAccountByName(ctx context.Context, accountName string) (Account, error) {
-	row := q.db.QueryRow(ctx, getAccountByName, accountName)
+type GetAccountByNameParams struct {
+	AccountName string    `json:"account_name"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetAccountByName(ctx context.Context, arg GetAccountByNameParams) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccountByName, arg.AccountName, arg.TenantID)
 	var i Account
 	err := row.Scan(
 		&i.ID,
@@ -319,18 +373,24 @@ func (q *Queries) GetAccountByName(ctx context.Context, accountName string) (Acc
 		&i.Currency,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getDocumentsByTransaction = `-- name: GetDocumentsByTransaction :many
-SELECT id, transaction_id, filename, content_type, size_bytes, object_key, created_at FROM documents
-WHERE transaction_id = $1
+SELECT id, transaction_id, filename, content_type, size_bytes, object_key, created_at, tenant_id FROM documents
+WHERE transaction_id = $1 AND tenant_id = $2
 ORDER BY created_at ASC
 `
 
-func (q *Queries) GetDocumentsByTransaction(ctx context.Context, transactionID uuid.UUID) ([]Document, error) {
-	rows, err := q.db.Query(ctx, getDocumentsByTransaction, transactionID)
+type GetDocumentsByTransactionParams struct {
+	TransactionID uuid.UUID `json:"transaction_id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetDocumentsByTransaction(ctx context.Context, arg GetDocumentsByTransactionParams) ([]Document, error) {
+	rows, err := q.db.Query(ctx, getDocumentsByTransaction, arg.TransactionID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -346,6 +406,7 @@ func (q *Queries) GetDocumentsByTransaction(ctx context.Context, transactionID u
 			&i.SizeBytes,
 			&i.ObjectKey,
 			&i.CreatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -358,7 +419,7 @@ func (q *Queries) GetDocumentsByTransaction(ctx context.Context, transactionID u
 }
 
 const getPendingOutboxEvents = `-- name: GetPendingOutboxEvents :many
-SELECT id, event_type, routing_key, payload, status, retry_count, max_retries, last_error, created_at, processed_at FROM ledger_outbox
+SELECT id, event_type, routing_key, payload, status, retry_count, max_retries, last_error, created_at, processed_at, tenant_id FROM ledger_outbox
 WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT $1::INT
@@ -384,6 +445,7 @@ func (q *Queries) GetPendingOutboxEvents(ctx context.Context, batchSize int32) (
 			&i.LastError,
 			&i.CreatedAt,
 			&i.ProcessedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -398,6 +460,7 @@ func (q *Queries) GetPendingOutboxEvents(ctx context.Context, batchSize int32) (
 const getPostingsByAccountID = `-- name: GetPostingsByAccountID :many
 SELECT
     p.id,
+    p.tenant_id,
     p.transaction_id,
     t.description AS transaction_description,
     p.account_id,
@@ -408,19 +471,21 @@ SELECT
 FROM postings p
 JOIN accounts a ON a.id = p.account_id
 JOIN transactions t ON t.id = p.transaction_id
-WHERE p.account_id = $1
+WHERE p.account_id = $1 AND p.tenant_id = $2
 ORDER BY p.created_at DESC
-LIMIT $3::INT OFFSET $2::INT
+LIMIT $4::INT OFFSET $3::INT
 `
 
 type GetPostingsByAccountIDParams struct {
-	AccountID  int64 `json:"account_id"`
-	PageOffset int32 `json:"page_offset"`
-	PageSize   int32 `json:"page_size"`
+	AccountID  int64     `json:"account_id"`
+	TenantID   uuid.UUID `json:"tenant_id"`
+	PageOffset int32     `json:"page_offset"`
+	PageSize   int32     `json:"page_size"`
 }
 
 type GetPostingsByAccountIDRow struct {
 	ID                     int64              `json:"id"`
+	TenantID               uuid.UUID          `json:"tenant_id"`
 	TransactionID          uuid.UUID          `json:"transaction_id"`
 	TransactionDescription string             `json:"transaction_description"`
 	AccountID              int64              `json:"account_id"`
@@ -431,7 +496,12 @@ type GetPostingsByAccountIDRow struct {
 }
 
 func (q *Queries) GetPostingsByAccountID(ctx context.Context, arg GetPostingsByAccountIDParams) ([]GetPostingsByAccountIDRow, error) {
-	rows, err := q.db.Query(ctx, getPostingsByAccountID, arg.AccountID, arg.PageOffset, arg.PageSize)
+	rows, err := q.db.Query(ctx, getPostingsByAccountID,
+		arg.AccountID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -441,6 +511,7 @@ func (q *Queries) GetPostingsByAccountID(ctx context.Context, arg GetPostingsByA
 		var i GetPostingsByAccountIDRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TransactionID,
 			&i.TransactionDescription,
 			&i.AccountID,
@@ -462,6 +533,7 @@ func (q *Queries) GetPostingsByAccountID(ctx context.Context, arg GetPostingsByA
 const getPostingsByTransactionID = `-- name: GetPostingsByTransactionID :many
 SELECT
     p.id,
+    p.tenant_id,
     p.transaction_id,
     p.account_id,
     a.account_name,
@@ -470,12 +542,18 @@ SELECT
     p.created_at
 FROM postings p
 JOIN accounts a ON a.id = p.account_id
-WHERE p.transaction_id = $1
+WHERE p.transaction_id = $1 AND p.tenant_id = $2
 ORDER BY p.id ASC
 `
 
+type GetPostingsByTransactionIDParams struct {
+	TransactionID uuid.UUID `json:"transaction_id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+}
+
 type GetPostingsByTransactionIDRow struct {
 	ID            int64              `json:"id"`
+	TenantID      uuid.UUID          `json:"tenant_id"`
 	TransactionID uuid.UUID          `json:"transaction_id"`
 	AccountID     int64              `json:"account_id"`
 	AccountName   string             `json:"account_name"`
@@ -484,8 +562,8 @@ type GetPostingsByTransactionIDRow struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetPostingsByTransactionID(ctx context.Context, transactionID uuid.UUID) ([]GetPostingsByTransactionIDRow, error) {
-	rows, err := q.db.Query(ctx, getPostingsByTransactionID, transactionID)
+func (q *Queries) GetPostingsByTransactionID(ctx context.Context, arg GetPostingsByTransactionIDParams) ([]GetPostingsByTransactionIDRow, error) {
+	rows, err := q.db.Query(ctx, getPostingsByTransactionID, arg.TransactionID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -495,6 +573,7 @@ func (q *Queries) GetPostingsByTransactionID(ctx context.Context, transactionID 
 		var i GetPostingsByTransactionIDRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TransactionID,
 			&i.AccountID,
 			&i.AccountName,
@@ -513,13 +592,18 @@ func (q *Queries) GetPostingsByTransactionID(ctx context.Context, transactionID 
 }
 
 const getTransactionByID = `-- name: GetTransactionByID :one
-SELECT id, idempotency_key, description, metadata, created_at FROM transactions
-WHERE id = $1
+SELECT id, idempotency_key, description, metadata, created_at, tenant_id FROM transactions
+WHERE id = $1 AND tenant_id = $2
 LIMIT 1
 `
 
-func (q *Queries) GetTransactionByID(ctx context.Context, id uuid.UUID) (Transaction, error) {
-	row := q.db.QueryRow(ctx, getTransactionByID, id)
+type GetTransactionByIDParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetTransactionByID(ctx context.Context, arg GetTransactionByIDParams) (Transaction, error) {
+	row := q.db.QueryRow(ctx, getTransactionByID, arg.ID, arg.TenantID)
 	var i Transaction
 	err := row.Scan(
 		&i.ID,
@@ -527,18 +611,24 @@ func (q *Queries) GetTransactionByID(ctx context.Context, id uuid.UUID) (Transac
 		&i.Description,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getTransactionByIdempotencyKey = `-- name: GetTransactionByIdempotencyKey :one
-SELECT id, idempotency_key, description, metadata, created_at FROM transactions
-WHERE idempotency_key = $1
+SELECT id, idempotency_key, description, metadata, created_at, tenant_id FROM transactions
+WHERE idempotency_key = $1 AND tenant_id = $2
 LIMIT 1
 `
 
-func (q *Queries) GetTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (Transaction, error) {
-	row := q.db.QueryRow(ctx, getTransactionByIdempotencyKey, idempotencyKey)
+type GetTransactionByIdempotencyKeyParams struct {
+	IdempotencyKey string    `json:"idempotency_key"`
+	TenantID       uuid.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetTransactionByIdempotencyKey(ctx context.Context, arg GetTransactionByIdempotencyKeyParams) (Transaction, error) {
+	row := q.db.QueryRow(ctx, getTransactionByIdempotencyKey, arg.IdempotencyKey, arg.TenantID)
 	var i Transaction
 	err := row.Scan(
 		&i.ID,
@@ -546,12 +636,13 @@ func (q *Queries) GetTransactionByIdempotencyKey(ctx context.Context, idempotenc
 		&i.Description,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, role, created_at, updated_at FROM users
+SELECT id, email, password_hash, role, created_at, updated_at, tenant_id FROM users
 WHERE email = $1
 LIMIT 1
 `
@@ -566,6 +657,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
@@ -587,19 +679,20 @@ func (q *Queries) IncrementOutboxRetry(ctx context.Context, arg IncrementOutboxR
 }
 
 const listAccounts = `-- name: ListAccounts :many
-SELECT id, account_name, account_type, currency, metadata, created_at FROM accounts
-WHERE id > $1::BIGINT
+SELECT id, account_name, account_type, currency, metadata, created_at, tenant_id FROM accounts
+WHERE tenant_id = $1 AND id > $2::BIGINT
 ORDER BY id ASC
-LIMIT $2::INT
+LIMIT $3::INT
 `
 
 type ListAccountsParams struct {
-	Cursor   int64 `json:"cursor"`
-	PageSize int32 `json:"page_size"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	Cursor   int64     `json:"cursor"`
+	PageSize int32     `json:"page_size"`
 }
 
 func (q *Queries) ListAccounts(ctx context.Context, arg ListAccountsParams) ([]Account, error) {
-	rows, err := q.db.Query(ctx, listAccounts, arg.Cursor, arg.PageSize)
+	rows, err := q.db.Query(ctx, listAccounts, arg.TenantID, arg.Cursor, arg.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -614,6 +707,7 @@ func (q *Queries) ListAccounts(ctx context.Context, arg ListAccountsParams) ([]A
 			&i.Currency,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -626,19 +720,20 @@ func (q *Queries) ListAccounts(ctx context.Context, arg ListAccountsParams) ([]A
 }
 
 const listTransactions = `-- name: ListTransactions :many
-SELECT id, idempotency_key, description, metadata, created_at FROM transactions
-WHERE created_at < $1::TIMESTAMPTZ
+SELECT id, idempotency_key, description, metadata, created_at, tenant_id FROM transactions
+WHERE tenant_id = $1 AND created_at < $2::TIMESTAMPTZ
 ORDER BY created_at DESC
-LIMIT $2::INT
+LIMIT $3::INT
 `
 
 type ListTransactionsParams struct {
+	TenantID        uuid.UUID          `json:"tenant_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
 	PageSize        int32              `json:"page_size"`
 }
 
 func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]Transaction, error) {
-	rows, err := q.db.Query(ctx, listTransactions, arg.CursorCreatedAt, arg.PageSize)
+	rows, err := q.db.Query(ctx, listTransactions, arg.TenantID, arg.CursorCreatedAt, arg.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -652,6 +747,7 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 			&i.Description,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}

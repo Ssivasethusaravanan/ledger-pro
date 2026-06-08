@@ -29,6 +29,8 @@ const (
 	TraceIDKey contextKey = "trace_id"
 	// APIKeyRoleKey is the context key for the authenticated role.
 	APIKeyRoleKey contextKey = "api_key_role"
+	// TenantIDKey is the context key for the authenticated user's tenant ID.
+	TenantIDKey contextKey = "tenant_id"
 )
 
 // GetTraceID extracts the trace ID from the request context.
@@ -45,6 +47,14 @@ func GetAPIKeyRole(ctx context.Context) string {
 		return role
 	}
 	return ""
+}
+
+// GetTenantID extracts the tenant ID from the request context.
+func GetTenantID(ctx context.Context) uuid.UUID {
+	if id, ok := ctx.Value(TenantIDKey).(uuid.UUID); ok {
+		return id
+	}
+	return uuid.Nil
 }
 
 // ---------------------------------------------------------------------------
@@ -156,10 +166,11 @@ func APIKeyAuthMiddleware(
 			// 1. Try to extract from Session Cookie first (Browser UI)
 			cookie, err := r.Cookie("session_token")
 			if err == nil && cookie.Value != "" && authSvc != nil {
-				role, err := authSvc.ValidateSession(r.Context(), cookie.Value)
-				if err == nil && role != "" {
+				sessionData, err := authSvc.ValidateSession(r.Context(), cookie.Value)
+				if err == nil && sessionData != nil {
 					// Valid session
-					ctx := context.WithValue(r.Context(), APIKeyRoleKey, role)
+					ctx := context.WithValue(r.Context(), APIKeyRoleKey, sessionData.Role)
+					ctx = context.WithValue(ctx, TenantIDKey, sessionData.TenantID)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
@@ -196,6 +207,8 @@ func APIKeyAuthMiddleware(
 
 			// Inject role into context
 			ctx := context.WithValue(r.Context(), APIKeyRoleKey, entry.Role)
+			defaultTenant, _ := uuid.Parse("00000000-0000-0000-0000-000000000000")
+			ctx = context.WithValue(ctx, TenantIDKey, defaultTenant)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

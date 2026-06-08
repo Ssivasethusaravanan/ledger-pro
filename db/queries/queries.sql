@@ -1,78 +1,87 @@
 -- ============================================================================
 -- LedgerPro: SQLC Queries
--- 
--- Naming convention: [Action][Entity] with SQLC annotations
--- All balance computations are real-time aggregations — no materialized column.
 -- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- TENANTS
+-- ---------------------------------------------------------------------------
+
+-- name: CreateTenant :one
+INSERT INTO tenants (name)
+VALUES ($1)
+RETURNING *;
 
 -- ---------------------------------------------------------------------------
 -- ACCOUNTS
 -- ---------------------------------------------------------------------------
 
 -- name: CreateAccount :one
-INSERT INTO accounts (account_name, account_type, currency, metadata)
-VALUES ($1, $2, $3, $4)
+INSERT INTO accounts (tenant_id, account_name, account_type, currency, metadata)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: GetAccountByID :one
 SELECT * FROM accounts
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 LIMIT 1;
 
 -- name: GetAccountByName :one
 SELECT * FROM accounts
-WHERE account_name = $1
+WHERE account_name = $1 AND tenant_id = $2
 LIMIT 1;
 
 -- name: ListAccounts :many
 SELECT * FROM accounts
-WHERE id > @cursor::BIGINT
+WHERE tenant_id = $1 AND id > @cursor::BIGINT
 ORDER BY id ASC
 LIMIT @page_size::INT;
 
 -- name: CountAccounts :one
-SELECT COUNT(*) FROM accounts;
+SELECT COUNT(*) FROM accounts
+WHERE tenant_id = $1;
 
 -- ---------------------------------------------------------------------------
 -- TRANSACTIONS
 -- ---------------------------------------------------------------------------
 
 -- name: CreateTransaction :one
-INSERT INTO transactions (idempotency_key, description, metadata)
-VALUES ($1, $2, $3)
+INSERT INTO transactions (tenant_id, idempotency_key, description, metadata)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetTransactionByID :one
 SELECT * FROM transactions
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 LIMIT 1;
 
 -- name: GetTransactionByIdempotencyKey :one
 SELECT * FROM transactions
-WHERE idempotency_key = $1
+WHERE idempotency_key = $1 AND tenant_id = $2
 LIMIT 1;
 
 -- name: ListTransactions :many
 SELECT * FROM transactions
-WHERE created_at < @cursor_created_at::TIMESTAMPTZ
+WHERE tenant_id = $1 AND created_at < @cursor_created_at::TIMESTAMPTZ
 ORDER BY created_at DESC
 LIMIT @page_size::INT;
 
 -- name: CountTransactions :one
-SELECT COUNT(*) FROM transactions;
+SELECT COUNT(*) FROM transactions
+WHERE tenant_id = $1;
 
 -- ---------------------------------------------------------------------------
 -- POSTINGS
 -- ---------------------------------------------------------------------------
 
 -- name: CreatePosting :one
-INSERT INTO postings (transaction_id, account_id, amount, direction)
-VALUES ($1, $2, $3, $4)
+INSERT INTO postings (tenant_id, transaction_id, account_id, amount, direction)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: GetPostingsByTransactionID :many
 SELECT
     p.id,
+    p.tenant_id,
     p.transaction_id,
     p.account_id,
     a.account_name,
@@ -81,12 +90,13 @@ SELECT
     p.created_at
 FROM postings p
 JOIN accounts a ON a.id = p.account_id
-WHERE p.transaction_id = $1
+WHERE p.transaction_id = $1 AND p.tenant_id = $2
 ORDER BY p.id ASC;
 
 -- name: GetPostingsByAccountID :many
 SELECT
     p.id,
+    p.tenant_id,
     p.transaction_id,
     t.description AS transaction_description,
     p.account_id,
@@ -97,19 +107,12 @@ SELECT
 FROM postings p
 JOIN accounts a ON a.id = p.account_id
 JOIN transactions t ON t.id = p.transaction_id
-WHERE p.account_id = $1
+WHERE p.account_id = $1 AND p.tenant_id = $2
 ORDER BY p.created_at DESC
 LIMIT @page_size::INT OFFSET @page_offset::INT;
 
 -- ---------------------------------------------------------------------------
 -- BALANCE COMPUTATION
--- ---------------------------------------------------------------------------
--- Returns the net balance for an account as:
---   SUM(debits) - SUM(credits)
--- 
--- For asset/expense accounts: positive balance = normal (debit-normal).
--- For liability/equity/revenue accounts: negative balance = normal (credit-normal).
--- The caller interprets sign based on account_type.
 -- ---------------------------------------------------------------------------
 
 -- name: GetAccountBalance :one
@@ -121,15 +124,15 @@ SELECT
         COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount ELSE 0 END), 0)
     )::BIGINT AS net_balance
 FROM postings
-WHERE account_id = $1;
+WHERE account_id = $1 AND tenant_id = $2;
 
 -- ---------------------------------------------------------------------------
 -- OUTBOX (Transactional Event Delivery)
 -- ---------------------------------------------------------------------------
 
 -- name: CreateOutboxEvent :one
-INSERT INTO ledger_outbox (event_type, routing_key, payload)
-VALUES ($1, $2, $3)
+INSERT INTO ledger_outbox (tenant_id, event_type, routing_key, payload)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetPendingOutboxEvents :many
@@ -163,13 +166,13 @@ WHERE status = 'failed' AND retry_count < max_retries;
 -- ---------------------------------------------------------------------------
 
 -- name: CreateDocument :one
-INSERT INTO documents (transaction_id, filename, content_type, size_bytes, object_key)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO documents (tenant_id, transaction_id, filename, content_type, size_bytes, object_key)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetDocumentsByTransaction :many
 SELECT * FROM documents
-WHERE transaction_id = $1
+WHERE transaction_id = $1 AND tenant_id = $2
 ORDER BY created_at ASC;
 
 -- ---------------------------------------------------------------------------
@@ -177,8 +180,8 @@ ORDER BY created_at ASC;
 -- ---------------------------------------------------------------------------
 
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, role)
-VALUES ($1, $2, $3)
+INSERT INTO users (tenant_id, email, password_hash, role)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetUserByEmail :one

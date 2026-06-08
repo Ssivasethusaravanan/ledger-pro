@@ -72,7 +72,7 @@ type TransactionResponse struct {
 	IdempotencyKey string                             `json:"idempotency_key"`
 	Description    string                             `json:"description"`
 	Metadata       json.RawMessage                    `json:"metadata"`
-	Postings       []db.GetPostingsByTransactionIDRow  `json:"postings"`
+	Postings       []db.GetPostingsByTransactionIDRow `json:"postings"`
 	CreatedAt      pgtype.Timestamptz                 `json:"created_at"`
 }
 
@@ -104,6 +104,7 @@ type DocumentResponse struct {
 type TransactionCreatedEvent struct {
 	EventID        string          `json:"event_id"`
 	EventType      string          `json:"event_type"`
+	TenantID       uuid.UUID       `json:"tenant_id"`
 	TransactionID  uuid.UUID       `json:"transaction_id"`
 	IdempotencyKey string          `json:"idempotency_key"`
 	Description    string          `json:"description"`
@@ -171,13 +172,14 @@ func (s *LedgerService) RedisClient() *redis.Client {
 // ---------------------------------------------------------------------------
 
 // CreateAccount creates a new ledger account.
-func (s *LedgerService) CreateAccount(ctx context.Context, req CreateAccountRequest) (db.Account, error) {
+func (s *LedgerService) CreateAccount(ctx context.Context, tenantID uuid.UUID, req CreateAccountRequest) (db.Account, error) {
 	metadata := req.Metadata
 	if metadata == nil {
 		metadata = json.RawMessage(`{}`)
 	}
 
 	account, err := s.queries.CreateAccount(ctx, db.CreateAccountParams{
+		TenantID:    tenantID,
 		AccountName: req.AccountName,
 		AccountType: req.AccountType,
 		Currency:    req.Currency,
@@ -199,8 +201,8 @@ func (s *LedgerService) CreateAccount(ctx context.Context, req CreateAccountRequ
 }
 
 // GetAccount retrieves an account by its ID.
-func (s *LedgerService) GetAccount(ctx context.Context, id int64) (db.Account, error) {
-	account, err := s.queries.GetAccountByID(ctx, id)
+func (s *LedgerService) GetAccount(ctx context.Context, tenantID uuid.UUID, id int64) (db.Account, error) {
+	account, err := s.queries.GetAccountByID(ctx, db.GetAccountByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return db.Account{}, ErrAccountNotFound
@@ -211,11 +213,12 @@ func (s *LedgerService) GetAccount(ctx context.Context, id int64) (db.Account, e
 }
 
 // ListAccounts retrieves a paginated list of accounts.
-func (s *LedgerService) ListAccounts(ctx context.Context, cursor int64, pageSize int32) ([]db.Account, error) {
+func (s *LedgerService) ListAccounts(ctx context.Context, tenantID uuid.UUID, cursor int64, pageSize int32) ([]db.Account, error) {
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
 	accounts, err := s.queries.ListAccounts(ctx, db.ListAccountsParams{
+		TenantID: tenantID,
 		Cursor:   cursor,
 		PageSize: pageSize,
 	})
@@ -226,9 +229,9 @@ func (s *LedgerService) ListAccounts(ctx context.Context, cursor int64, pageSize
 }
 
 // GetAccountBalance computes the real-time balance for an account.
-func (s *LedgerService) GetAccountBalance(ctx context.Context, accountID int64) (BalanceResponse, error) {
+func (s *LedgerService) GetAccountBalance(ctx context.Context, tenantID uuid.UUID, accountID int64) (BalanceResponse, error) {
 	// First verify the account exists
-	account, err := s.queries.GetAccountByID(ctx, accountID)
+	account, err := s.queries.GetAccountByID(ctx, db.GetAccountByIDParams{ID: accountID, TenantID: tenantID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return BalanceResponse{}, ErrAccountNotFound
@@ -236,7 +239,7 @@ func (s *LedgerService) GetAccountBalance(ctx context.Context, accountID int64) 
 		return BalanceResponse{}, fmt.Errorf("get account for balance: %w", err)
 	}
 
-	balance, err := s.queries.GetAccountBalance(ctx, accountID)
+	balance, err := s.queries.GetAccountBalance(ctx, db.GetAccountBalanceParams{AccountID: accountID, TenantID: tenantID})
 	if err != nil {
 		return BalanceResponse{}, fmt.Errorf("get account balance: %w", err)
 	}
@@ -251,12 +254,13 @@ func (s *LedgerService) GetAccountBalance(ctx context.Context, accountID int64) 
 }
 
 // ListAccountPostings retrieves a paginated list of postings for a specific account.
-func (s *LedgerService) ListAccountPostings(ctx context.Context, accountID int64, offset int32, pageSize int32) ([]db.GetPostingsByAccountIDRow, error) {
+func (s *LedgerService) ListAccountPostings(ctx context.Context, tenantID uuid.UUID, accountID int64, offset int32, pageSize int32) ([]db.GetPostingsByAccountIDRow, error) {
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
 
 	postings, err := s.queries.GetPostingsByAccountID(ctx, db.GetPostingsByAccountIDParams{
+		TenantID:   tenantID,
 		AccountID:  accountID,
 		PageSize:   pageSize,
 		PageOffset: offset,
@@ -285,7 +289,7 @@ func (s *LedgerService) ListAccountPostings(ctx context.Context, accountID int64
 //  8. Commit the database transaction.
 //  9. Store the idempotency key in Redis with the configured TTL.
 //  10. Release the distributed lock.
-func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransactionRequest) (*TransactionResponse, error) {
+func (s *LedgerService) CreateTransaction(ctx context.Context, tenantID uuid.UUID, req CreateTransactionRequest) (*TransactionResponse, error) {
 	// -----------------------------------------------------------------------
 	// Validation
 	// -----------------------------------------------------------------------
@@ -318,7 +322,7 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 	// -----------------------------------------------------------------------
 	// Step 1: Acquire distributed lock
 	// -----------------------------------------------------------------------
-	lockKey := fmt.Sprintf("ledger:lock:%s", req.IdempotencyKey)
+	lockKey := fmt.Sprintf("ledger:lock:%s:%s", tenantID, req.IdempotencyKey)
 	lock, err := s.locker.Obtain(ctx, lockKey, 30*time.Second, &redislock.Options{
 		RetryStrategy: redislock.LimitRetry(redislock.LinearBackoff(100*time.Millisecond), 5),
 	})
@@ -341,7 +345,7 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 	// -----------------------------------------------------------------------
 	// Step 2: Check idempotency (replay if key exists)
 	// -----------------------------------------------------------------------
-	idempotencyRedisKey := fmt.Sprintf("ledger:idempotency:%s", req.IdempotencyKey)
+	idempotencyRedisKey := fmt.Sprintf("ledger:idempotency:%s:%s", tenantID, req.IdempotencyKey)
 	cached, err := s.rdb.Get(ctx, idempotencyRedisKey).Result()
 	if err == nil && cached != "" {
 		// Key exists — deserialize and replay the cached response
@@ -389,6 +393,7 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 	}
 
 	txRecord, err := qtx.CreateTransaction(ctx, db.CreateTransactionParams{
+		TenantID:       tenantID,
 		IdempotencyKey: req.IdempotencyKey,
 		Description:    req.Description,
 		Metadata:       metadata,
@@ -402,6 +407,7 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 	// -----------------------------------------------------------------------
 	for i, p := range req.Postings {
 		_, err := qtx.CreatePosting(ctx, db.CreatePostingParams{
+			TenantID:      tenantID,
 			TransactionID: txRecord.ID,
 			AccountID:     p.AccountID,
 			Amount:        p.Amount,
@@ -418,6 +424,7 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 	event := TransactionCreatedEvent{
 		EventID:        uuid.New().String(),
 		EventType:      "transaction.created",
+		TenantID:       tenantID,
 		TransactionID:  txRecord.ID,
 		IdempotencyKey: txRecord.IdempotencyKey,
 		Description:    txRecord.Description,
@@ -432,6 +439,7 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 	}
 
 	_, err = qtx.CreateOutboxEvent(ctx, db.CreateOutboxEventParams{
+		TenantID:   tenantID,
 		EventType:  event.EventType,
 		RoutingKey: "transaction.created",
 		Payload:    outboxPayload,
@@ -456,7 +464,7 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 	// -----------------------------------------------------------------------
 	// Step 8: Fetch the full postings for the response
 	// -----------------------------------------------------------------------
-	postings, err := s.queries.GetPostingsByTransactionID(ctx, txRecord.ID)
+	postings, err := s.queries.GetPostingsByTransactionID(ctx, db.GetPostingsByTransactionIDParams{TransactionID: txRecord.ID, TenantID: tenantID})
 	if err != nil {
 		s.logger.WarnContext(ctx, "failed to fetch postings after commit — non-fatal",
 			slog.String("error", err.Error()),
@@ -487,8 +495,8 @@ func (s *LedgerService) CreateTransaction(ctx context.Context, req CreateTransac
 }
 
 // GetTransaction retrieves a transaction and its postings by ID.
-func (s *LedgerService) GetTransaction(ctx context.Context, id uuid.UUID) (*TransactionResponse, error) {
-	txRecord, err := s.queries.GetTransactionByID(ctx, id)
+func (s *LedgerService) GetTransaction(ctx context.Context, tenantID uuid.UUID, id uuid.UUID) (*TransactionResponse, error) {
+	txRecord, err := s.queries.GetTransactionByID(ctx, db.GetTransactionByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrTransactionNotFound
@@ -496,7 +504,7 @@ func (s *LedgerService) GetTransaction(ctx context.Context, id uuid.UUID) (*Tran
 		return nil, fmt.Errorf("get transaction: %w", err)
 	}
 
-	postings, err := s.queries.GetPostingsByTransactionID(ctx, id)
+	postings, err := s.queries.GetPostingsByTransactionID(ctx, db.GetPostingsByTransactionIDParams{TransactionID: id, TenantID: tenantID})
 	if err != nil {
 		return nil, fmt.Errorf("get postings: %w", err)
 	}
@@ -512,7 +520,7 @@ func (s *LedgerService) GetTransaction(ctx context.Context, id uuid.UUID) (*Tran
 }
 
 // ListTransactions retrieves a paginated list of transactions.
-func (s *LedgerService) ListTransactions(ctx context.Context, cursorTime time.Time, pageSize int32) ([]db.Transaction, error) {
+func (s *LedgerService) ListTransactions(ctx context.Context, tenantID uuid.UUID, cursorTime time.Time, pageSize int32) ([]db.Transaction, error) {
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
@@ -523,6 +531,7 @@ func (s *LedgerService) ListTransactions(ctx context.Context, cursorTime time.Ti
 	}
 
 	txns, err := s.queries.ListTransactions(ctx, db.ListTransactionsParams{
+		TenantID:        tenantID,
 		CursorCreatedAt: cursor,
 		PageSize:        pageSize,
 	})
@@ -539,6 +548,7 @@ func (s *LedgerService) ListTransactions(ctx context.Context, cursorTime time.Ti
 // AttachDocument streams a file to R2 and records its metadata in the database.
 func (s *LedgerService) AttachDocument(
 	ctx context.Context,
+	tenantID uuid.UUID,
 	transactionID uuid.UUID,
 	filename string,
 	contentType string,
@@ -546,7 +556,7 @@ func (s *LedgerService) AttachDocument(
 	file io.Reader,
 ) (DocumentResponse, error) {
 	// 1. Verify transaction exists
-	_, err := s.queries.GetTransactionByID(ctx, transactionID)
+	_, err := s.queries.GetTransactionByID(ctx, db.GetTransactionByIDParams{ID: transactionID, TenantID: tenantID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DocumentResponse{}, ErrTransactionNotFound
@@ -556,7 +566,7 @@ func (s *LedgerService) AttachDocument(
 
 	// 2. Generate unique object key (e.g. docs/txn_id/uuid_filename)
 	docID := uuid.New()
-	objectKey := fmt.Sprintf("docs/%s/%s_%s", transactionID.String(), docID.String(), filename)
+	objectKey := fmt.Sprintf("docs/%s/%s/%s_%s", tenantID, transactionID.String(), docID.String(), filename)
 
 	// 3. Upload to R2 (streams directly, doesn't buffer in memory)
 	if err := s.storageService.UploadFile(ctx, file, objectKey, contentType); err != nil {
@@ -565,6 +575,7 @@ func (s *LedgerService) AttachDocument(
 
 	// 4. Save metadata in Postgres
 	doc, err := s.queries.CreateDocument(ctx, db.CreateDocumentParams{
+		TenantID:      tenantID,
 		TransactionID: transactionID,
 		Filename:      filename,
 		ContentType:   contentType,
@@ -599,8 +610,8 @@ func (s *LedgerService) AttachDocument(
 }
 
 // ListTransactionDocuments returns all documents attached to a transaction, with fresh download URLs.
-func (s *LedgerService) ListTransactionDocuments(ctx context.Context, transactionID uuid.UUID) ([]DocumentResponse, error) {
-	docs, err := s.queries.GetDocumentsByTransaction(ctx, transactionID)
+func (s *LedgerService) ListTransactionDocuments(ctx context.Context, tenantID uuid.UUID, transactionID uuid.UUID) ([]DocumentResponse, error) {
+	docs, err := s.queries.GetDocumentsByTransaction(ctx, db.GetDocumentsByTransactionParams{TransactionID: transactionID, TenantID: tenantID})
 	if err != nil {
 		return nil, fmt.Errorf("get documents: %w", err)
 	}

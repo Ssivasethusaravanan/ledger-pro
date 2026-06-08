@@ -42,7 +42,7 @@ func (h *Handler) AttachDocumentHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Delegate to service to stream to R2 and save metadata
-	docResp, err := h.svc.AttachDocument(ctx, txID, header.Filename, contentType, header.Size, file)
+	docResp, err := h.svc.AttachDocument(ctx, GetTenantID(ctx), txID, header.Filename, contentType, header.Size, file)
 	if err != nil {
 		if errors.Is(err, service.ErrTransactionNotFound) {
 			WriteProblem(w, r, TransactionNotFound("Transaction not found"))
@@ -66,7 +66,7 @@ func (h *Handler) ListTransactionDocumentsHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	docs, err := h.svc.ListTransactionDocuments(ctx, txID)
+	docs, err := h.svc.ListTransactionDocuments(ctx, GetTenantID(ctx), txID)
 	if err != nil {
 		h.logger.ErrorContext(ctx, "failed to list documents", slog.String("error", err.Error()))
 		WriteProblem(w, r, InternalError("Failed to retrieve documents"))

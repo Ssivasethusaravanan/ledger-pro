@@ -152,6 +152,7 @@ type Account struct {
 	Currency  string             `json:"currency"`
 	Metadata  []byte             `json:"metadata"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	TenantID  uuid.UUID          `json:"tenant_id"`
 }
 
 // Metadata for files (receipts/invoices) attached to transactions and stored in R2.
@@ -163,6 +164,7 @@ type Document struct {
 	SizeBytes     int64              `json:"size_bytes"`
 	ObjectKey     string             `json:"object_key"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	TenantID      uuid.UUID          `json:"tenant_id"`
 }
 
 // Transactional outbox for guaranteed event delivery. Written within the same ACID TX as ledger postings.
@@ -177,6 +179,7 @@ type LedgerOutbox struct {
 	LastError   pgtype.Text        `json:"last_error"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+	TenantID    uuid.UUID          `json:"tenant_id"`
 }
 
 // Individual debit/credit legs of a transaction. Append-only — never updated or deleted.
@@ -188,6 +191,13 @@ type Posting struct {
 	Amount    int64              `json:"amount"`
 	Direction PostingDirection   `json:"direction"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	TenantID  uuid.UUID          `json:"tenant_id"`
+}
+
+type Tenant struct {
+	ID        uuid.UUID          `json:"id"`
+	Name      string             `json:"name"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // A financial transaction — groups one or more postings that must balance.
@@ -198,6 +208,7 @@ type Transaction struct {
 	Description    string             `json:"description"`
 	Metadata       []byte             `json:"metadata"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
 }
 
 type User struct {
@@ -207,4 +218,5 @@ type User struct {
 	Role         string             `json:"role"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	TenantID     uuid.UUID          `json:"tenant_id"`
 }

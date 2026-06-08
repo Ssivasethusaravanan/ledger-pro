@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"ledger_pro/internal/db"
 )
@@ -48,6 +49,7 @@ func (h *Handler) LoginHandler(keys map[string]APIKeyEntry) http.HandlerFunc {
 		}
 
 		role := ""
+		var tenantID uuid.UUID
 
 		// 1. Verify Credentials
 		if req.APIKey != "" {
@@ -57,6 +59,7 @@ func (h *Handler) LoginHandler(keys map[string]APIKeyEntry) http.HandlerFunc {
 				return
 			}
 			role = entry.Role
+			tenantID, _ = uuid.Parse("00000000-0000-0000-0000-000000000000") // default tenant for API keys
 		} else if req.Email != "" && req.Password != "" {
 			queries := db.New(h.pool)
 			user, err := queries.GetUserByEmail(r.Context(), req.Email)
@@ -70,13 +73,14 @@ func (h *Handler) LoginHandler(keys map[string]APIKeyEntry) http.HandlerFunc {
 				return
 			}
 			role = user.Role
+			tenantID = user.TenantID
 		} else {
 			WriteProblem(w, r, BadRequest("must provide api_key or email/password"))
 			return
 		}
 
 		// 2. Generate Session Token in Redis
-		token, err := h.auth.CreateSession(r.Context(), role)
+		token, err := h.auth.CreateSession(r.Context(), role, tenantID)
 		if err != nil {
 			h.logger.ErrorContext(r.Context(), "failed to create session", "error", err.Error())
 			WriteProblem(w, r, InternalError("failed to create session"))
@@ -129,7 +133,17 @@ func (h *Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queries := db.New(h.pool)
+
+	tenantName := "Organization of " + req.Email
+	tenant, err := queries.CreateTenant(r.Context(), tenantName)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "failed to create tenant", "error", err.Error())
+		WriteProblem(w, r, InternalError("failed to create organization"))
+		return
+	}
+
 	user, err := queries.CreateUser(r.Context(), db.CreateUserParams{
+		TenantID:     tenant.ID,
 		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
 		Role:         "admin", // Defaulting to admin
@@ -147,7 +161,7 @@ func (h *Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create session automatically after signup
-	token, err := h.auth.CreateSession(r.Context(), user.Role)
+	token, err := h.auth.CreateSession(r.Context(), user.Role, user.TenantID)
 	if err != nil {
 		h.logger.ErrorContext(r.Context(), "failed to create session", "error", err.Error())
 		WriteProblem(w, r, InternalError("failed to create session"))

@@ -199,7 +199,7 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := h.svc.CreateAccount(r.Context(), req)
+	account, err := h.svc.CreateAccount(r.Context(), GetTenantID(r.Context()), req)
 	if err != nil {
 		h.logger.ErrorContext(r.Context(), "create account failed", slog.String("error", err.Error()))
 		WriteProblem(w, r, InternalError("failed to create account"))
@@ -228,7 +228,7 @@ func (h *Handler) GetAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := h.svc.GetAccount(r.Context(), id)
+	account, err := h.svc.GetAccount(r.Context(), GetTenantID(r.Context()), id)
 	if err != nil {
 		if errors.Is(err, service.ErrAccountNotFound) {
 			WriteProblem(w, r, AccountNotFound(fmt.Sprintf("account with id %d does not exist", id)))
@@ -263,7 +263,7 @@ func (h *Handler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accounts, err := h.svc.ListAccounts(r.Context(), cursor, int32(pageSize))
+	accounts, err := h.svc.ListAccounts(r.Context(), GetTenantID(r.Context()), cursor, int32(pageSize))
 	if err != nil {
 		WriteProblem(w, r, InternalError("failed to list accounts"))
 		return
@@ -301,7 +301,7 @@ func (h *Handler) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.svc.GetAccountBalance(r.Context(), id)
+	balance, err := h.svc.GetAccountBalance(r.Context(), GetTenantID(r.Context()), id)
 	if err != nil {
 		if errors.Is(err, service.ErrAccountNotFound) {
 			WriteProblem(w, r, AccountNotFound(fmt.Sprintf("account with id %d does not exist", id)))
@@ -344,7 +344,7 @@ func (h *Handler) GetAccountPostings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postings, err := h.svc.ListAccountPostings(r.Context(), id, int32(offset), int32(pageSize))
+	postings, err := h.svc.ListAccountPostings(r.Context(), GetTenantID(r.Context()), id, int32(offset), int32(pageSize))
 	if err != nil {
 		WriteProblem(w, r, InternalError("failed to list account postings"))
 		return
@@ -394,7 +394,7 @@ func (h *Handler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txnResponse, err := h.svc.CreateTransaction(r.Context(), req)
+	txnResponse, err := h.svc.CreateTransaction(r.Context(), GetTenantID(r.Context()), req)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrIdempotencyKeyRequired):
@@ -445,7 +445,7 @@ func (h *Handler) GetTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txnResponse, err := h.svc.GetTransaction(r.Context(), id)
+	txnResponse, err := h.svc.GetTransaction(r.Context(), GetTenantID(r.Context()), id)
 	if err != nil {
 		if errors.Is(err, service.ErrTransactionNotFound) {
 			WriteProblem(w, r, TransactionNotFound(fmt.Sprintf("transaction with id %s does not exist", idStr)))
@@ -492,7 +492,7 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 		cursorTime = time.Now().Add(time.Second) // future to get latest first
 	}
 
-	txns, err := h.svc.ListTransactions(r.Context(), cursorTime, int32(pageSize))
+	txns, err := h.svc.ListTransactions(r.Context(), GetTenantID(r.Context()), cursorTime, int32(pageSize))
 	if err != nil {
 		WriteProblem(w, r, InternalError("failed to list transactions"))
 		return

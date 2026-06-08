@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -16,6 +18,12 @@ var (
 )
 
 const sessionKeyPrefix = "session:"
+
+// SessionData holds the authenticated user's session state
+type SessionData struct {
+	Role     string    `json:"role"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
 
 // AuthService handles creating and validating browser session tokens using Redis.
 type AuthService struct {
@@ -31,8 +39,8 @@ func NewAuthService(rdb *redis.Client, ttl time.Duration) *AuthService {
 	}
 }
 
-// CreateSession generates a secure random token and stores it in Redis with the associated role.
-func (s *AuthService) CreateSession(ctx context.Context, role string) (string, error) {
+// CreateSession generates a secure random token and stores it in Redis with the associated session data.
+func (s *AuthService) CreateSession(ctx context.Context, role string, tenantID uuid.UUID) (string, error) {
 	// Generate a 32-byte secure random token
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -40,39 +48,58 @@ func (s *AuthService) CreateSession(ctx context.Context, role string) (string, e
 	}
 	token := base64.URLEncoding.EncodeToString(b)
 
+	sessionData := SessionData{
+		Role:     role,
+		TenantID: tenantID,
+	}
+
+	data, err := json.Marshal(sessionData)
+	if err != nil {
+		return "", fmt.Errorf("marshal session: %w", err)
+	}
+
 	// Store in Redis
 	key := sessionKeyPrefix + token
-	if err := s.rdb.Set(ctx, key, role, s.sessionTTL).Err(); err != nil {
+	if err := s.rdb.Set(ctx, key, data, s.sessionTTL).Err(); err != nil {
 		return "", fmt.Errorf("store session in redis: %w", err)
 	}
 
 	return token, nil
 }
 
-// ValidateSession checks Redis for the token and returns the associated role.
-// It also refreshes the TTL of the session to keep it alive.
-func (s *AuthService) ValidateSession(ctx context.Context, token string) (string, error) {
+// ValidateSession checks Redis for the token and returns the session data.
+func (s *AuthService) ValidateSession(ctx context.Context, token string) (*SessionData, error) {
 	key := sessionKeyPrefix + token
 
 	// Pipeline to GET and EXPIRE atomically
 	pipe := s.rdb.Pipeline()
 	getCmd := pipe.Get(ctx, key)
 	pipe.Expire(ctx, key, s.sessionTTL)
-	
+
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return "", ErrInvalidSession
+			return nil, ErrInvalidSession
 		}
-		return "", fmt.Errorf("pipeline exec: %w", err)
+		return nil, fmt.Errorf("pipeline exec: %w", err)
 	}
 
-	role, err := getCmd.Result()
+	data, err := getCmd.Result()
 	if err != nil {
-		return "", fmt.Errorf("get result: %w", err)
+		return nil, fmt.Errorf("get result: %w", err)
 	}
 
-	return role, nil
+	var sessionData SessionData
+	if err := json.Unmarshal([]byte(data), &sessionData); err != nil {
+		// Fallback for old sessions that were just plain text roles
+		if data == "admin" || data == "write" || data == "read" {
+			uid, _ := uuid.Parse("00000000-0000-0000-0000-000000000000")
+			return &SessionData{Role: data, TenantID: uid}, nil
+		}
+		return nil, fmt.Errorf("unmarshal session: %w", err)
+	}
+
+	return &sessionData, nil
 }
 
 // RevokeSession explicitly deletes the session token from Redis (Logout).
